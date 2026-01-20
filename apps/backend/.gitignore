@@ -1,0 +1,30 @@
+# Environment variables
+.env
+.env.local
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Database files
+*.db
+*.db-journal
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Coverage directory
+coverage/
+
+# Prisma generated
+/generated/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

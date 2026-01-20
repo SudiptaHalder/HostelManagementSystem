@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Hostel {
+  id              String    @id @default(cuid())
+  name            String
+  slug            String    @unique
+  plan            PlanType  @default(FREE)
+  subscriptionId  String?
+  stripeCustomerId String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  settings        Json?
+  
+  users           User[]
+  rooms           Room[]
+  guests          Guest[]
+  bookings        Booking[]
+  payments        Payment[]
+}
+
+enum PlanType {
+  FREE
+  BASIC
+  PREMIUM
+  ENTERPRISE
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(STAFF)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  hostelId  String
+  hostel    Hostel   @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  
+  @@unique([email, hostelId])
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+model Room {
+  id          String   @id @default(cuid())
+  roomNumber  String
+  type        RoomType
+  capacity    Int
+  price       Decimal
+  amenities   String[]
+  isAvailable Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  hostelId    String
+  hostel      Hostel   @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  bookings    Booking[]
+  
+  @@unique([roomNumber, hostelId])
+}
+
+enum RoomType {
+  DORM
+  PRIVATE
+  DELUXE
+  SUITE
+}
+
+model Guest {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String
+  idType      IdType
+  idNumber    String
+  address     String?
+  nationality String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  hostelId    String
+  hostel      Hostel   @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  bookings    Booking[]
+  
+  @@unique([idNumber, hostelId])
+}
+
+enum IdType {
+  PASSPORT
+  DRIVING_LICENSE
+  NATIONAL_ID
+  OTHER
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  checkIn     DateTime
+  checkOut    DateTime
+  status      BookingStatus @default(CONFIRMED)
+  totalAmount Decimal
+  paidAmount  Decimal  @default(0)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  hostelId    String
+  hostel      Hostel   @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  roomId      String
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  guestId     String
+  guest       Guest    @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  payments    Payment[]
+  
+  @@index([hostelId, status])
+  @@index([hostelId, checkIn])
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+model Payment {
+  id          String      @id @default(cuid())
+  amount      Decimal
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  transactionId String?
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  hostelId    String
+  hostel      Hostel     @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  bookingId   String?
+  booking     Booking?   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  @@index([hostelId, status])
+  @@index([hostelId, createdAt])
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  MOBILE_MONEY
+  STRIPE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}

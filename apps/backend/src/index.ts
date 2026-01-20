@@ -4,13 +4,14 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes';
+import hostelRoutes from './routes/hostel.routes';
 import prisma from './utils/prisma';
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Rate limiting
 const limiter = rateLimit({
@@ -29,6 +30,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/hostels', hostelRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -69,7 +71,7 @@ app.get('/api/test', (req, res) => {
   res.json({ 
     message: 'Hostel SaaS Backend is working!',
     version: '1.0.0',
-    features: ['Multi-tenant', 'PostgreSQL', 'Prisma ORM', 'Authentication']
+    features: ['Multi-tenant', 'PostgreSQL', 'Prisma ORM', 'Authentication', 'Hostel Management']
   });
 });
 
@@ -96,7 +98,8 @@ app.listen(PORT, () => {
   console.log(`📁 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
   console.log(`📊 Database: ${process.env.DATABASE_URL?.split('@')[1] || 'Not configured'}`);
-  console.log(`🔐 Authentication endpoints: /api/auth/register, /api/auth/login, /api/auth/me`);
+  console.log(`🔐 Authentication endpoints: /api/auth/*`);
+  console.log(`🏨 Hostel endpoints: /api/hostels/*`);
 });
 
 // Graceful shutdown

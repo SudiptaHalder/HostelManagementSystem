@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../utils/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate } from '../middleware/auth';
 
 const router = Router();
 
@@ -24,7 +24,7 @@ const createHostelSchema = z.object({
 
 const updateHostelSchema = z.object({
   name: z.string().min(2).max(100).optional(),
-  slug: z.string().min(2).max(50).regex(/^[a-z0-9-]+$/).optional(), // Add this line
+  slug: z.string().min(2).max(50).regex(/^[a-z0-9-]+$/).optional(),
   plan: z.enum(['FREE', 'BASIC', 'PREMIUM', 'ENTERPRISE']).optional(),
   isActive: z.boolean().optional(),
   settings: z.object({
@@ -41,8 +41,8 @@ const updateHostelSchema = z.object({
   }).optional(),
 });
 
-// Get all hostels (Super Admin only)
-router.get('/', authenticate, authorize(['SUPER_ADMIN']), async (req, res) => {
+// Get all hostels (NO PERMISSION CHECK - Development only)
+router.get('/', authenticate, async (req, res) => {
   try {
     const { page = '1', limit = '10', search = '' } = req.query;
     const pageNum = parseInt(page as string);
@@ -118,7 +118,6 @@ router.get('/my-hostel', authenticate, async (req: any, res) => {
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     
     const [monthlyRevenue, todayBookings, availableRooms] = await Promise.all([
-      // Monthly revenue
       prisma.payment.aggregate({
         where: {
           hostelId: hostel.id,
@@ -127,7 +126,6 @@ router.get('/my-hostel', authenticate, async (req: any, res) => {
         },
         _sum: { amount: true },
       }),
-      // Today's bookings
       prisma.booking.count({
         where: {
           hostelId: hostel.id,
@@ -136,7 +134,6 @@ router.get('/my-hostel', authenticate, async (req: any, res) => {
           },
         },
       }),
-      // Available rooms
       prisma.room.count({
         where: {
           hostelId: hostel.id,
@@ -165,15 +162,10 @@ router.get('/my-hostel', authenticate, async (req: any, res) => {
   }
 });
 
-// Get hostel by ID (Super Admin or hostel member)
+// Get hostel by ID (NO PERMISSION CHECK - Development only)
 router.get('/:id', authenticate, async (req: any, res) => {
   try {
     const { id } = req.params;
-    
-    // Check if user has access to this hostel
-    if (req.user.role !== 'SUPER_ADMIN' && req.user.hostelId !== id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
 
     const hostel = await prisma.hostel.findUnique({
       where: { id },
@@ -200,22 +192,48 @@ router.get('/:id', authenticate, async (req: any, res) => {
   }
 });
 
-// Update hostel
+// Create new hostel (NO PERMISSION CHECK - Development only)
+router.post('/', authenticate, async (req: any, res) => {
+  try {
+    const validatedData = createHostelSchema.parse(req.body);
+
+    // Check if hostel slug is unique
+    const existingHostel = await prisma.hostel.findUnique({
+      where: { slug: validatedData.slug }
+    });
+    
+    if (existingHostel) {
+      return res.status(400).json({ error: 'Hostel slug already taken' });
+    }
+
+    const hostel = await prisma.hostel.create({
+      data: {
+        name: validatedData.name,
+        slug: validatedData.slug,
+        plan: validatedData.plan || 'FREE',
+        settings: validatedData.settings || {},
+      }
+    });
+
+    res.status(201).json({
+      message: 'Hostel created successfully',
+      hostel,
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation failed', details: error.errors });
+    }
+    console.error('Create hostel error:', error);
+    res.status(500).json({ error: 'Failed to create hostel', message: error.message });
+  }
+});
+
+// Update hostel (NO PERMISSION CHECK - Development only)
 router.put('/:id', authenticate, async (req: any, res) => {
   try {
     const { id } = req.params;
-    
-    // Check if user has access to this hostel
-    if (req.user.role !== 'SUPER_ADMIN' && req.user.hostelId !== id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
 
     const validatedData = updateHostelSchema.parse(req.body);
-
-    // Check if trying to update slug (only SUPER_ADMIN can do this)
-    if (validatedData.slug && req.user.role !== 'SUPER_ADMIN') {
-      return res.status(403).json({ error: 'Only super admins can change hostel slug' });
-    }
 
     // If updating slug, check if it's unique
     if (validatedData.slug) {
@@ -245,8 +263,45 @@ router.put('/:id', authenticate, async (req: any, res) => {
   }
 });
 
-// Deactivate/reactivate hostel (Super Admin only)
-router.patch('/:id/status', authenticate, authorize(['SUPER_ADMIN']), async (req, res) => {
+// Delete hostel (NO PERMISSION CHECK - Development only)
+router.delete('/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if hostel exists
+    const hostel = await prisma.hostel.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            users: true,
+            rooms: true,
+            bookings: true,
+          },
+        },
+      },
+    });
+
+    if (!hostel) {
+      return res.status(404).json({ error: 'Hostel not found' });
+    }
+
+    // Delete the hostel
+    await prisma.hostel.delete({
+      where: { id },
+    });
+
+    res.json({
+      message: 'Hostel deleted successfully',
+    });
+  } catch (error: any) {
+    console.error('Delete hostel error:', error);
+    res.status(500).json({ error: 'Failed to delete hostel', message: error.message });
+  }
+});
+
+// Update hostel status (NO PERMISSION CHECK - Development only)
+router.patch('/:id/status', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const { isActive } = req.body;
@@ -270,15 +325,10 @@ router.patch('/:id/status', authenticate, authorize(['SUPER_ADMIN']), async (req
   }
 });
 
-// Get hostel statistics
+// Get hostel statistics (NO PERMISSION CHECK - Development only)
 router.get('/:id/stats', authenticate, async (req: any, res) => {
   try {
     const { id } = req.params;
-    
-    // Check if user has access to this hostel
-    if (req.user.role !== 'SUPER_ADMIN' && req.user.hostelId !== id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
 
     const today = new Date();
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -293,7 +343,6 @@ router.get('/:id/stats', authenticate, async (req: any, res) => {
       roomTypes,
       monthlyBookingsTrend,
     ] = await Promise.all([
-      // Monthly revenue
       prisma.payment.aggregate({
         where: {
           hostelId: id,
@@ -302,7 +351,6 @@ router.get('/:id/stats', authenticate, async (req: any, res) => {
         },
         _sum: { amount: true },
       }),
-      // Yearly revenue
       prisma.payment.aggregate({
         where: {
           hostelId: id,
@@ -311,7 +359,6 @@ router.get('/:id/stats', authenticate, async (req: any, res) => {
         },
         _sum: { amount: true },
       }),
-      // Occupancy rate (last 30 days)
       (async () => {
         const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
         const bookings = await prisma.booking.findMany({
@@ -327,7 +374,6 @@ router.get('/:id/stats', authenticate, async (req: any, res) => {
           },
         });
 
-        // Simple occupancy calculation
         const totalRoomNights = bookings.reduce((sum, booking) => {
           const nights = Math.ceil(
             (booking.checkOut.getTime() - booking.checkIn.getTime()) / (1000 * 60 * 60 * 24)
@@ -340,9 +386,7 @@ router.get('/:id/stats', authenticate, async (req: any, res) => {
         
         return possibleRoomNights > 0 ? (totalRoomNights / possibleRoomNights) * 100 : 0;
       })(),
-      // Total guests
       prisma.guest.count({ where: { hostelId: id } }),
-      // Active bookings (checked in or confirmed for future)
       prisma.booking.count({
         where: {
           hostelId: id,
@@ -352,13 +396,11 @@ router.get('/:id/stats', authenticate, async (req: any, res) => {
           ],
         },
       }),
-      // Room type distribution
       prisma.room.groupBy({
         by: ['type'],
         where: { hostelId: id },
         _count: true,
       }),
-      // Monthly bookings trend (last 6 months)
       (async () => {
         const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, 1);
         
@@ -371,9 +413,8 @@ router.get('/:id/stats', authenticate, async (req: any, res) => {
           _count: true,
         });
 
-        // Group by month
         const monthlyData = bookings.reduce((acc: any, booking) => {
-          const month = booking.createdAt.toISOString().slice(0, 7); // YYYY-MM
+          const month = booking.createdAt.toISOString().slice(0, 7);
           acc[month] = (acc[month] || 0) + booking._count;
           return acc;
         }, {});
@@ -389,7 +430,7 @@ router.get('/:id/stats', authenticate, async (req: any, res) => {
       stats: {
         monthlyRevenue: monthlyRevenue._sum.amount || 0,
         yearlyRevenue: yearlyRevenue._sum.amount || 0,
-        occupancyRate: Math.round(occupancyRate * 100) / 100, // Round to 2 decimal places
+        occupancyRate: Math.round(occupancyRate * 100) / 100,
         totalGuests,
         activeBookings,
         roomTypes: roomTypes.map(rt => ({
@@ -402,6 +443,42 @@ router.get('/:id/stats', authenticate, async (req: any, res) => {
   } catch (error: any) {
     console.error('Get hostel stats error:', error);
     res.status(500).json({ error: 'Failed to fetch hostel statistics', message: error.message });
+  }
+});
+
+// Create new hostel (NO PERMISSION CHECK - Development only)
+router.post('/', authenticate, async (req: any, res) => {
+  try {
+    const validatedData = createHostelSchema.parse(req.body);
+
+    // Check if hostel slug is unique
+    const existingHostel = await prisma.hostel.findUnique({
+      where: { slug: validatedData.slug }
+    });
+    
+    if (existingHostel) {
+      return res.status(400).json({ error: 'Hostel slug already taken' });
+    }
+
+    const hostel = await prisma.hostel.create({
+      data: {
+        name: validatedData.name,
+        slug: validatedData.slug,
+        plan: validatedData.plan || 'FREE',
+        settings: validatedData.settings || {},
+      }
+    });
+
+    res.status(201).json({
+      message: 'Hostel created successfully',
+      hostel,
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation failed', details: error.errors });
+    }
+    console.error('Create hostel error:', error);
+    res.status(500).json({ error: 'Failed to create hostel', message: error.message });
   }
 });
 
